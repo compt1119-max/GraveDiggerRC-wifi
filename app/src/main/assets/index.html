@@ -74,7 +74,7 @@
 
 <script>
   // ===================== ZONE AJUSTABLE PAR L'UTILISATEUR =====================
-  const SEND_INTERVAL_MS = 25;   // 25 ms = 40 trames/s
+  const SEND_INTERVAL_MS = 35;   // 25 ms = 40 trames/s
   const DEADZONE = 0.04;         // zone morte tactile (0..1)
   const INVERT_SPEED = false;    // inverse le joystick de vitesse
   const INVERT_STEER = false;    // inverse le joystick de direction
@@ -82,9 +82,9 @@
   const DEFAULT_TIER = 1;        // palier initial : 1, 2 ou 3
   // Ratio P3 / P2 = 1.00 / 0.65 ≈ 1.54 (>= 1.5)
   const SPEED_TIERS = {
-    1: 0.45,
-    2: 0.65,
-    3: 1.00
+    1: 0.85,
+    2: 1.05,
+    3: 1.80
   };
   const BUTTONS = [
     { label: 'B1 / AUX',     mode: 'momentary' },

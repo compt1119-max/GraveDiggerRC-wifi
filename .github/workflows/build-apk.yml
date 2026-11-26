@@ -1,9 +1,12 @@
 name: Build Debug APK
 
 on:
-  workflow_dispatch:
   push:
-    branches: [ "main", "master" ]
+    branches: [ "main" ]
+    paths-ignore:
+      - "**.md"
+      - "app/src/main/res/mipmap-*/**"
+  workflow_dispatch:
 
 jobs:
   build:

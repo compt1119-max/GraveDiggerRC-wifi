@@ -32,11 +32,14 @@
   .knob.steer { background: var(--amber); }
   .cap { font-size: 12px; letter-spacing: .08em; color: var(--mut); }
 
-  .center { width: 220px; flex: none; display: flex; flex-direction: column; justify-content: center; gap: 12px; }
+  .center { width: 220px; flex: none; display: flex; flex-direction: column; justify-content: center; gap: 10px; }
+  .tiers { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; }
+  .tier { background: var(--btn); border: 1px solid var(--line); border-radius: 12px; padding: 10px 4px; text-align: center; font-size: 13px; font-weight: 800; color: var(--mut); }
+  .tier.active { background: var(--blue); border-color: var(--blue); color: #081018; }
   .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
-  .aux { background: var(--btn); border: 1px solid var(--line); border-radius: 14px; padding: 18px 6px; text-align: center; font-size: 13px; font-weight: 700; color: var(--mut); }
+  .aux { background: var(--btn); border: 1px solid var(--line); border-radius: 14px; padding: 16px 6px; text-align: center; font-size: 13px; font-weight: 700; color: var(--mut); }
   .aux.on { background: var(--green); border-color: var(--green); color: #fff; }
-  .stop { background: var(--red); border-radius: 14px; padding: 18px 6px; text-align: center; font-size: 20px; font-weight: 900; letter-spacing: .04em; color: #fff; }
+  .stop { background: var(--red); border-radius: 14px; padding: 16px 6px; text-align: center; font-size: 20px; font-weight: 900; letter-spacing: .04em; color: #fff; }
   .stop.rearm { background: var(--green); font-size: 14px; }
 </style>
 </head>
@@ -50,10 +53,15 @@
   <div class="main">
     <div class="zone" id="zoneSpeed">
       <div class="track v" id="trackSpeed"><div class="knob speed" id="knobSpeed"></div></div>
-      <span class="cap" id="capSpeed">VITESSE 0</span>
+      <span class="cap" id="capSpeed">VITESSE 0 (P1)</span>
     </div>
 
     <div class="center">
+      <div class="tiers" id="tiers">
+        <div class="tier" data-tier="1">P1</div>
+        <div class="tier" data-tier="2">P2</div>
+        <div class="tier" data-tier="3">P3</div>
+      </div>
       <div class="grid" id="grid"></div>
       <div class="stop" id="stop">STOP</div>
     </div>
@@ -66,33 +74,31 @@
 
 <script>
   // ===================== ZONE AJUSTABLE PAR L'UTILISATEUR =====================
-  const SEND_INTERVAL_MS = 25;   // 25 ms = 40 trames/s (comme la version d'origine)
+  const SEND_INTERVAL_MS = 25;   // 25 ms = 40 trames/s
   const DEADZONE = 0.04;         // zone morte tactile (0..1)
   const INVERT_SPEED = false;    // inverse le joystick de vitesse
   const INVERT_STEER = false;    // inverse le joystick de direction
   const REARM_HOLD_MS = 600;     // appui long pour réarmer après STOP
+  const DEFAULT_TIER = 1;        // palier initial : 1, 2 ou 3
+  // Ratio P3 / P2 = 1.00 / 0.65 ≈ 1.54 (>= 1.5)
   const SPEED_TIERS = {
     1: 0.45,
     2: 0.65,
     3: 1.00
   };
-  const DEFAULT_TIER = 1;
-  // mode : 'toggle' (on/off) ou 'momentary' (tant que le doigt reste appuyé)
-  // Le bouton n°1 correspond au 1er caractère de B:, etc.
   const BUTTONS = [
     { label: 'B1 / AUX',     mode: 'momentary' },
-    { label: 'B2 / VITESSE', mode: 'momentary' },
+    { label: 'B2 / BOOST', mode: 'momentary' },
     { label: 'B3 / PRESET',  mode: 'momentary' },
     { label: 'B4 / CAPTEUR', mode: 'momentary' }
   ];
-  // Format de la trame envoyée à l'ESP32 (identique à la version d'origine) :
-  //   T:<vitesse -100..100>,S:<direction -100..100>,B:<4 chiffres 0/1>   ex. T:50,S:-20,B:0100
   // =================== FIN DE LA ZONE AJUSTABLE ===================
 
-  let throttle = 0;   // -1..1
-  let steer = 0;      // -1..1
-  let mask = 0;       // bits des boutons
+  let throttle = 0;        // -1..1
+  let steer = 0;           // -1..1
+  let mask = 0;            // bits des boutons
   let armed = true;
+  let speedTier = DEFAULT_TIER;
 
   const $ = (id) => document.getElementById(id);
   const clamp = (v, a, b) => Math.min(b, Math.max(a, v));
@@ -103,15 +109,27 @@
     return invert ? -o : o;
   };
 
+  // ---------- Paliers de vitesse (1, 2, 3) ----------
+  const tierEls = Array.from(document.querySelectorAll('.tier'));
+  function paintTiers() {
+    tierEls.forEach(function (el) {
+      el.classList.toggle('active', Number(el.dataset.tier) === speedTier);
+    });
+  }
+  function setSpeedTier(t) {
+    if (!armed || !SPEED_TIERS[t]) return;
+    speedTier = t;
+    paintTiers();
+    send();
+  }
+  tierEls.forEach(function (el) {
+    el.addEventListener('pointerdown', function (e) {
+      e.preventDefault();
+      setSpeedTier(Number(el.dataset.tier));
+    });
+  });
+
   // ---------- Envoi ----------
-  function frame() {
-    const s = armed ? Math.round(throttle * 100) : 0;
-    const t = armed ? Math.round(steer * 100) : 0;
-    const m = armed ? mask : 0;
-    let bits = '';
-    for (let i = 0; i < 4; i++) bits += ((m >> i) & 1);
-    return { text: 'T:' + s + ',S:' + t + ',B:' + bits, s: s, t: t };
-   }
   function frame() {
     const mult = armed ? (SPEED_TIERS[speedTier] ?? 1) : 0;
     const s = armed ? Math.round(clamp(throttle * mult * 100, -100, 100)) : 0;
@@ -122,18 +140,25 @@
     return { text: 'T:' + s + ',S:' + t + ',B:' + bits, s: s, t: t };
   }
 
-  let lastS = null, lastT = null;
+  let lastS = null, lastT = null, lastTier = null;
   function send() {
     const f = frame();
     if (window.AndroidBridge && typeof window.AndroidBridge.sendUdp === 'function') {
       window.AndroidBridge.sendUdp(f.text);
     }
-    if (f.s !== lastS) { lastS = f.s; $('capSpeed').textContent = 'VITESSE ' + f.s; }
-    if (f.t !== lastT) { lastT = f.t; $('capSteer').textContent = 'DIRECTION ' + f.t; }
+    if (f.s !== lastS || speedTier !== lastTier) {
+      lastS = f.s;
+      lastTier = speedTier;
+      $('capSpeed').textContent = 'VITESSE ' + f.s + ' (P' + speedTier + ')';
+    }
+    if (f.t !== lastT) {
+      lastT = f.t;
+      $('capSteer').textContent = 'DIRECTION ' + f.t;
+    }
   }
   setInterval(send, SEND_INTERVAL_MS);
 
-  // ---------- Joysticks (multi-touch, position relative au premier contact) ----------
+  // ---------- Joysticks ----------
   function makeStick(zone, track, knob, axis, onValue) {
     let id = null, ox = 0, oy = 0, travel = 1;
     function setPos(v) {
@@ -200,9 +225,9 @@
   }
   function disarm() {
     armed = false;
-    throttle = 0; steer = 0; mask = 0;
+    throttle = 0; steer = 0; mask = 0; speedTier = DEFAULT_TIER;
     stickSpeed.reset(); stickSteer.reset();
-    paintButtons(); paintStop(); send();
+    paintTiers(); paintButtons(); paintStop(); send();
   }
   $('stop').addEventListener('pointerdown', function () {
     if (armed) { disarm(); return; }
@@ -226,6 +251,7 @@
   }
 
   document.addEventListener('contextmenu', function (e) { e.preventDefault(); });
+  paintTiers();
   paintStop();
 </script>
 </body>

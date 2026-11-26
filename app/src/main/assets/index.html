@@ -71,6 +71,12 @@
   const INVERT_SPEED = false;    // inverse le joystick de vitesse
   const INVERT_STEER = false;    // inverse le joystick de direction
   const REARM_HOLD_MS = 600;     // appui long pour réarmer après STOP
+  const SPEED_TIERS = {
+    1: 0.45,
+    2: 0.65,
+    3: 1.00
+  };
+  const DEFAULT_TIER = 1;
   // mode : 'toggle' (on/off) ou 'momentary' (tant que le doigt reste appuyé)
   // Le bouton n°1 correspond au 1er caractère de B:, etc.
   const BUTTONS = [
@@ -101,6 +107,15 @@
   function frame() {
     const s = armed ? Math.round(throttle * 100) : 0;
     const t = armed ? Math.round(steer * 100) : 0;
+    const m = armed ? mask : 0;
+    let bits = '';
+    for (let i = 0; i < 4; i++) bits += ((m >> i) & 1);
+    return { text: 'T:' + s + ',S:' + t + ',B:' + bits, s: s, t: t };
+   }
+  function frame() {
+    const mult = armed ? (SPEED_TIERS[speedTier] ?? 1) : 0;
+    const s = armed ? Math.round(clamp(throttle * mult * 100, -100, 100)) : 0;
+    const t = armed ? Math.round(clamp(steer * 100, -100, 100)) : 0;
     const m = armed ? mask : 0;
     let bits = '';
     for (let i = 0; i < 4; i++) bits += ((m >> i) & 1);
